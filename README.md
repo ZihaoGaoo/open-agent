@@ -15,9 +15,39 @@
 - IM 接入：Slack / Telegram / Discord
 - 多 Agent 通信、会话与记忆、多租户与安全、可观测性
 
+## 本地快速开始
+
+```bash
+# 1. 准备环境
+cp .env.example .env            # 按需填写；至少配置 DATABASE_URL
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"          # 需要 Python 3.12+
+
+# 2. 建表（外部 PostgreSQL）
+alembic upgrade head
+
+# 3. 创建租户与 API Key（明文仅此一次可见）
+python -m app.admin create-org --name "Acme"
+
+# 4. 启动服务
+uvicorn app.main:app --reload    # 或 ROLE=web/worker 用容器入口
+
+# 5. 调用（同步）
+curl -X POST localhost:8000/v1/agents \
+  -H "X-API-Key: <上面的 key>" -H "Content-Type: application/json" \
+  -d '{"name":"demo","system_prompt":"You are $role.","model":"claude-opus-4-8"}'
+
+curl -X POST localhost:8000/v1/agents/<agent_id>/invoke \
+  -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  -d '{"input":"你好","variables":{"role":"助手"}}'
+```
+
+> Docker：`docker compose up` 会以单镜像分别起 `web` / `worker` 两个进程 + 外部 PostgreSQL。
+
 ## 文档
 
 - 总体架构设计：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - 迭代路线图：[docs/ROADMAP.md](docs/ROADMAP.md)
 
-> 当前处于**总体设计**阶段，已确定模块划分、技术栈与产品能力；各模块细化与代码实现按路线图迭代落地。
+> 进度：**M1 进行中** —— 应用骨架、核心数据表 + 迁移、API Key 鉴权、agent/prompt CRUD、
+> 同步 `invoke` 闭环已就绪（默认 Claude Provider，多模型抽象层）。其余按路线图迭代。

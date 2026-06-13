@@ -13,12 +13,14 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api import health
+from app.api.routes import agents, prompts
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
+api_router.include_router(agents.router, prefix="/v1")
+api_router.include_router(prompts.router, prefix="/v1")
 
-# 业务路由挂载点（随里程碑接入）：
-# from app.api.routes import agents, runs, im_webhooks
-# api_router.include_router(agents.router, prefix="/v1", tags=["agents"])
-# api_router.include_router(runs.router, prefix="/v1", tags=["runs"])
-# api_router.include_router(im_webhooks.router, prefix="/im", tags=["im"])
+# 后续里程碑挂载点：
+# from app.api.routes import runs, im_webhooks
+# api_router.include_router(runs.router, prefix="/v1", tags=["runs"])   # M3 异步/流式
+# api_router.include_router(im_webhooks.router, prefix="/im", tags=["im"])  # M3 IM
