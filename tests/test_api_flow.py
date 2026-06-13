@@ -17,7 +17,7 @@ from app.auth.security import generate_api_key  # noqa: E402
 from app.db.models import ApiKey, Org  # noqa: E402
 from app.db.session import get_sessionmaker  # noqa: E402
 from app.main import app  # noqa: E402
-from app.providers.base import GenResult  # noqa: E402
+from app.providers.base import GenResult, StreamEvent  # noqa: E402
 from app.providers.registry import register_provider  # noqa: E402
 
 
@@ -32,8 +32,15 @@ class _StubProvider:
             usage={"output_tokens": 3},
         )
 
-    def stream(self, req):  # pragma: no cover
-        raise NotImplementedError
+    async def stream(self, req):
+        text = f"echo:{req.messages[-1].content}|sys={req.system}"
+        yield StreamEvent(type="text", text=text)
+        yield StreamEvent(
+            type="done",
+            result=GenResult(
+                text=text, tool_calls=[], stop_reason="end_turn", usage={"output_tokens": 3}
+            ),
+        )
 
 
 register_provider("stub", lambda: _StubProvider())
@@ -87,3 +94,33 @@ async def test_auth_crud_invoke_flow():
         body = r.json()
         assert body["output"] == "echo:hi|sys=You are helper."
         assert body["stop_reason"] == "end_turn"
+
+        # 流式 invoke（SSE）
+        async with c.stream(
+            "POST",
+            f"/v1/agents/{agent_id}/stream",
+            headers=headers,
+            json={"input": "hi", "provider": "stub", "variables": {"role": "helper"}},
+        ) as resp:
+            assert resp.status_code == 200
+            assert "text/event-stream" in resp.headers["content-type"]
+            body_text = ""
+            async for line in resp.aiter_lines():
+                body_text += line + "\n"
+        assert "event: text" in body_text
+        assert "event: done" in body_text
+        assert "echo:hi|sys=You are helper." in body_text
+
+        # 更新配置 → 产生新版本(v2)
+        r = await c.patch(
+            f"/v1/agents/{agent_id}",
+            headers=headers,
+            json={"system_prompt": "v2 prompt", "params": {"max_tokens": 2048}},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["current_version"] == 2
+
+        r = await c.get(f"/v1/agents/{agent_id}/version", headers=headers)
+        assert r.status_code == 200
+        assert r.json()["version"] == 2
+        assert r.json()["system_prompt"] == "v2 prompt"

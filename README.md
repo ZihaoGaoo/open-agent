@@ -49,5 +49,10 @@ curl -X POST localhost:8000/v1/agents/<agent_id>/invoke \
 - 总体架构设计：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - 迭代路线图：[docs/ROADMAP.md](docs/ROADMAP.md)
 
-> 进度：**M1 进行中** —— 应用骨架、核心数据表 + 迁移、API Key 鉴权、agent/prompt CRUD、
-> 同步 `invoke` 闭环已就绪（默认 Claude Provider，多模型抽象层）。其余按路线图迭代。
+> 进度：**单 Agent 全链路已就绪** —— 应用骨架、核心数据表 + 迁移、API Key 鉴权、
+> agent/prompt CRUD、配置更新与版本递增（`PATCH /v1/agents/{id}`）、
+> 同步调用（`POST .../invoke`）、流式调用（`POST .../stream`，SSE）、
+> 工具调用（agent loop 中执行 Webhook 工具）。默认 Claude Provider（多模型抽象层）。
+>
+> Webhook 工具当前以内联配置存于 agent 版本的 `capabilities.webhook_tools`；
+> MCP / Skill 接入、能力绑定表、异步 run/队列、IM 渠道、多 agent 通信按 [ROADMAP](docs/ROADMAP.md) 推进。

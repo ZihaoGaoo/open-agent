@@ -8,10 +8,12 @@ M1 提供可运行的循环结构；上下文压缩 / 流式事件持久化 / �
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.providers.base import GenRequest, GenResult, LLMProvider, Message
+from app.runtime.events import RunStreamEvent
 from app.runtime.tools import ToolExecutor
 
 
@@ -81,6 +83,76 @@ class AgentRuntime:
             iterations=i + 1,
             usage=total_usage,
             stop_reason=last.stop_reason if last else "error",
+        )
+
+    async def stream(
+        self, config: RunConfig, messages: list[Message]
+    ) -> AsyncIterator[RunStreamEvent]:
+        """流式执行 agentic loop，逐事件产出（文本/思考/工具调用/工具结果/完成）。"""
+        history = list(messages)
+        tool_specs = self._tools.specs() if self._tools else []
+        total_usage: dict[str, int] = {}
+        last: GenResult | None = None
+        iterations = 0
+
+        for i in range(config.max_iterations):
+            iterations = i + 1
+            req = GenRequest(
+                model=config.model,
+                messages=history,
+                system=config.system,
+                tools=tool_specs,
+                max_tokens=config.max_tokens,
+                params=config.params,
+            )
+            final: GenResult | None = None
+            async for ev in self._provider.stream(req):
+                if ev.type == "text" and ev.text:
+                    yield RunStreamEvent(type="text", text=ev.text)
+                elif ev.type == "thinking" and ev.text:
+                    yield RunStreamEvent(type="thinking", text=ev.text)
+                elif ev.type == "done":
+                    final = ev.result
+                elif ev.type == "error":
+                    yield RunStreamEvent(type="error", error=ev.text or "provider error")
+                    return
+
+            if final is None:
+                yield RunStreamEvent(type="error", error="provider 未返回最终结果")
+                return
+
+            last = final
+            _accumulate(total_usage, final.usage)
+            history.append(
+                Message(role="assistant", content=final.text, tool_calls=final.tool_calls)
+            )
+
+            if not final.tool_calls:
+                break
+
+            for call in final.tool_calls:
+                yield RunStreamEvent(
+                    type="tool_use",
+                    tool_call_id=call.id,
+                    tool_name=call.name,
+                    arguments=call.arguments,
+                )
+                result = (
+                    await self._tools.execute(call)
+                    if self._tools
+                    else f"[error] 无可用工具执行器: {call.name}"
+                )
+                yield RunStreamEvent(
+                    type="tool_result", tool_call_id=call.id, content=result
+                )
+                history.append(Message(role="tool", content=result, tool_call_id=call.id))
+
+        yield RunStreamEvent(
+            type="done",
+            output=last.text if last else "",
+            stop_reason=last.stop_reason if last else "error",
+            iterations=iterations,
+            usage=total_usage,
         )
 
 

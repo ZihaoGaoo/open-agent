@@ -36,6 +36,17 @@ class AgentCreate(BaseModel):
     capabilities: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentUpdate(BaseModel):
+    """部分更新；提供的字段会写入一个新版本快照（current_version 递增）。"""
+
+    name: str | None = None
+    description: str | None = None
+    model: str | None = None
+    system_prompt: str | None = None
+    params: dict[str, Any] | None = None
+    capabilities: dict[str, Any] | None = None
+
+
 class AgentVersionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
