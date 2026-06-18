@@ -1,0 +1,46 @@
+# 本地编排：单镜像分别以 web / worker 角色起两个进程 + 外部 PostgreSQL。
+# 生产部署：应用为单镜像，PostgreSQL 用外部托管实例。
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: openagent
+      POSTGRES_PASSWORD: openagent
+      POSTGRES_DB: openagent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openagent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: .
+    environment:
+      ROLE: web
+      DATABASE_URL: postgresql+asyncpg://openagent:openagent@postgres:5432/openagent
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-change-me}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build: .
+    environment:
+      ROLE: worker
+      DATABASE_URL: postgresql+asyncpg://openagent:openagent@postgres:5432/openagent
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
